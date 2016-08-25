@@ -7,23 +7,24 @@ Delete Orphaned Tags
 !!!                       USE AT YOUR OWN RISK                           !!!
 
 This SQL script extends the Historian "Runtime" database by adding one stored
-procedure that makes it easy to delete "orphaned" tags from the Historian database.
+procedure that makes it easy to delete Public Namespace entries left behind
+after deleting tags ("orphaned" namespace).
 
-	exec dbo.wwkbDeleteOrphanedTags @DeleteNow
+	exec dbo.wwkbDeleteOrphanedNamespaceGroups @DeleteNow
 
-	DeleteNow	Set to '1' to force the tag to actually be deleted. Omit or set to '0' to see
-				a list of tags that would have been deleted.
+	DeleteNow	Set to '1' to force the group to actually be deleted. Omit or set to '0' to see
+				a list of groups that would have been deleted.
 
 Here's an example of how to invoke the SP:
 
-	exec dbo.wwkbDeleteOrphanedTags
+	exec dbo.wwkbDeleteOrphanedNamespaceGroups
 
 */
 USE [Runtime]
 GO
 
-IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[wwkbDeleteOrphanedTags]') AND type in (N'P', N'PC'))
-DROP PROCEDURE [dbo].[wwkbDeleteOrphanedTags]
+IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[wwkbDeleteOrphanedNamespaceGroups]') AND type in (N'P', N'PC'))
+DROP PROCEDURE [dbo].[wwkbDeleteOrphanedNamespaceGroups]
 GO
 
 SET ANSI_NULLS ON
@@ -33,7 +34,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-CREATE procedure [dbo].[wwkbDeleteOrphanedTags] (
+CREATE procedure [dbo].[wwkbDeleteOrphanedNamespaceGroups] (
 	@DeleteNow bit = 0
 ) as
 begin
