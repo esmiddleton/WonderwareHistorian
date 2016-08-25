@@ -7,7 +7,8 @@ Delete Old Tags
 !!!                       USE AT YOUR OWN RISK                           !!!
 
 This SQL script extends the Historian "Runtime" database by adding one stored
-procedure that makes it easy to delete "stale" tags from the Historian database.
+procedure that makes it easy to delete "stale" tags from the Historian database
+(tags which have not received data in a long time).
 
 	exec dbo.wwkbDeleteOldTags @DaysOld, @LiveDaysOld, @DeleteNow
 
