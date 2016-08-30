@@ -25,9 +25,7 @@ By:			E. Middleton
 -- the Replication Server.
 --
 /*
-exec wwkbBackfillReplication '2015-12-04 00:00', '2015-12-17 00:00:00', 3
-
-exec wwkbBackfillReplication '2016-07-01 00:00', '2016-07-21 0:00:00', 2
+exec wwkbBackfillReplication '2016-07-01 00:00', '2016-07-06 0:00:00', 2
 
 exec wwkbBackfillReplication '2016-07-27 00:00', '2016-07-28 0:00:00', 2
 exec wwkbBackfillReplication '2016-08-01 00:00', '2016-08-02 0:00:00', 2
@@ -98,6 +96,8 @@ begin
 
 	-- Track how many times we've checked on the progress
 	declare @WaitCount int
+	declare @LogRate int
+	set @LogRate = 2
 
 	-- Flag to indicate the entire backfill has completed (or timed out)
 	declare @AllDone bit
@@ -114,15 +114,15 @@ begin
 
 	-- Record start of execution in the "Annotation" table
 	set @RepComment = ' Beginning backfill for ' + convert(nvarchar(10),@EntityCount) + ' tags from ''' + convert(nvarchar(30),@OldestTimeLocal,120)+''' to '''+ convert(nvarchar(30),@NewestTimeLocal,120)+''''
-	print convert(nvarchar(50),getdate(),120) + @RepComment
+	print convert(nvarchar(50),getdate(),120)+@RepComment
 	set @RepComment = @InvocationId + @RepComment
 	exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
 
 	-- Variables for calculating progress & estimating completion time
-	declare @PercentComplete float
+	declare @AverageRate float
 	declare @MinutesRemaining float
 	declare @MinutesElapsed float
-	declare @MinutesCovered float
+	declare @MinutesBackfilled float
 	declare @MinutesTotal float
 	set @MinutesTotal = datediff(minute,@OldestTimeLocal,@NewestTimeLocal)
 
@@ -144,16 +144,16 @@ begin
 					and q.ReplicationTagEntityKey is null
 
 			-- Report progress to console
-			set @RepComment = ' Added ' + convert(nvarchar(10),@EntityCount) + ' items from ' + convert(nvarchar(50),@CurrentStartLocal,120) + ' to ' + convert(nvarchar(50),@CurrentEndLocal,120)
-			print convert(nvarchar(50),getdate(),120) + @RepComment
+			set @RepComment = convert(nvarchar(50),getdate(),120)+' Added ' + convert(nvarchar(10),@EntityCount) + ' items from ' + convert(nvarchar(50),@CurrentStartLocal,120) + ' to ' + convert(nvarchar(50),@CurrentEndLocal,120)
+			raiserror (@RepComment, 0, 1) with nowait -- Used to force update in Management Studio so messages are visible
 
 			-- Estimate time remaining
-			set @MinutesCovered = datediff(minute,@CurrentEndLocal,@NewestTimeLocal)
+			set @MinutesBackfilled = datediff(minute,@CurrentEndLocal,@NewestTimeLocal)
 			set @MinutesElapsed = datediff(minute,@ExecutionStartUtc,getutcdate())
-			if (@MinutesCovered > 0) and (@MinutesTotal>0)
+			if (@MinutesBackfilled > 0) and (@MinutesTotal>0)
 				begin
-					set @PercentComplete = @MinutesCovered / @MinutesTotal
-					set @MinutesRemaining = @MinutesElapsed / @PercentComplete 
+					set @AverageRate = @MinutesElapsed / @MinutesBackfilled 
+					set @MinutesRemaining = (@MinutesTotal - @MinutesBackfilled) * @AverageRate
 					print '           Estimated overall completion time: '+convert(nvarchar(50),dateadd(minute,@MinutesRemaining,getdate()),120)
 				end
 
@@ -168,7 +168,7 @@ begin
 				begin
 					set @WaitCount = @WaitCount + 1
 					waitfor delay @WaitTime
-					if (@WaitCount % 2 = 0)
+					if (@WaitCount % @LogRate = 0)
 						begin
 							set @QueueSize = (select count(*) from ReplicationSyncRequestInfo where ReplicationServerKey=@ReplicationKey)
 							set @RepComment = convert(nvarchar(50),getdate(),120)+ ' backfilling remaining ' + convert(nvarchar(10),@QueueSize) + ' items starting at ' + convert(nvarchar(50),@CurrentStartLocal,120)
@@ -189,6 +189,10 @@ begin
 			from HistoryBlock
 			where datediff(minute,FromDate,@NextEndLocal) > 0
 			order by datediff(minute,FromDate,@NextEndLocal) asc, datediff(hour, FromDate, ToDate) desc
+
+			-- Management Studio starts queuing messages above 500, so slow the logging rate after we first get started
+			if (@LogRate < 10) 
+				set @LogRate = case @LogRate when 2 then 5 when 5 then 10 else @LogRate end
 
 			if @QueueSize > @MaxQueueReady
 				begin -- Queue processing is taking longer than  expected--something may be wrong, so bail out
