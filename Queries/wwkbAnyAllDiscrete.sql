@@ -35,8 +35,8 @@
 
 */
 
-IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[wwkbAllDiscretesOn]') AND type in (N'P', N'PC'))
-DROP PROCEDURE [dbo].[wwkbAllDiscretesOn]
+IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[wwkbAnyAllDiscrete]') AND type in (N'P', N'PC'))
+DROP PROCEDURE [dbo].[wwkbAnyAllDiscrete]
 GO
 
 
