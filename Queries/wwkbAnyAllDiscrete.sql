@@ -9,7 +9,8 @@
 
 	It takes as parameters start/end times to use and a comma-separated list of tagname. 
 	
-	The "NotFinal" column indicates when the end time is later than the last value received for any of the tags queried.
+	The "NotFinal" column indicates when the end time is later than the last value received for any of the tags queried:
+           0=Complete, 1=at least one tag has not received a value after the query end time
 
 	Related to forum thread "How to get pump runtimes when they ran at same time?" at:
 	https://softwareforums.schneider-electric.com/wonderware/technical_support/f/7/p/19691/68750#68750
@@ -22,8 +23,8 @@
 
 	Example Output:
 
-	  StartDateTime            EndDateTime              NoneMsecs  AllMsecs  AnyMsecs  NoneCount  AllCount  AnyCount  ChangeCount  NotFinal
-		2016-07-08 06:00:00.000  2016-07-08 08:00:00.000  3737072    3991      1751512   550        5         838       1699         0
+	  StartDateTime        EndDateTime          NoneMsecs  AllMsecs  AnyMsecs  NoneCount  AllCount  AnyCount  ChangeCount  NotFinal
+	  2016-07-08 06:00:00  2016-07-08 08:00:00  3737072    3991      1751512   550        5         838       1699         0
 
 
 	Limitations:
