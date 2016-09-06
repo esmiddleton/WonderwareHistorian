@@ -11,8 +11,8 @@ This script can be used without additional charge with any licensed Wonderware H
 The terms of use are defined in your existing End User License Agreement for the 
 Wonderware Historian software.
 
-Modified: 	29-Aug-2016
-By:			E. Middleton
+Modified: 	6-Sep-2016
+By:		E. Middleton
 
 */
 
@@ -25,10 +25,8 @@ By:			E. Middleton
 -- the Replication Server.
 --
 /*
-exec wwkbBackfillReplication '2016-07-01 00:00', '2016-07-06 0:00:00', 2
+exec wwkbBackfillReplication '2016-05-01 00:00', '2016-07-01 0:00:00', 2
 
-exec wwkbBackfillReplication '2016-07-27 00:00', '2016-07-28 0:00:00', 2
-exec wwkbBackfillReplication '2016-08-01 00:00', '2016-08-02 0:00:00', 2
 select * from ReplicationSyncRequestInfo where ReplicationServerKey=2   order by earliestexecutiondatetimeUtc desc
 update ReplicationSyncRequestInfo set earliestexecutiondatetimeUtc=getutcdate() where ModEndDateTimeUtc < dateadd(minute,-5,getutcdate())
 update ReplicationSyncRequestInfo set earliestexecutiondatetimeUtc=getutcdate(), RequestVersion=0 where ReplicationServerKey=2
@@ -171,7 +169,7 @@ begin
 					if (@WaitCount % @LogRate = 0)
 						begin
 							set @QueueSize = (select count(*) from ReplicationSyncRequestInfo where ReplicationServerKey=@ReplicationKey)
-							set @RepComment = convert(nvarchar(50),getdate(),120)+ ' backfilling remaining ' + convert(nvarchar(10),@QueueSize) + ' items starting at ' + convert(nvarchar(50),@CurrentStartLocal,120)
+							set @RepComment = convert(nvarchar(50),getdate(),120)+ ' Backfilling remaining ' + convert(nvarchar(10),@QueueSize) + ' items starting at ' + convert(nvarchar(50),@CurrentStartLocal,120)
 							raiserror (@RepComment, 0, 1) with nowait -- Used to force update in Management Studio so messages are visible
 						end
 				end
@@ -207,7 +205,7 @@ begin
 					print 'Exiting...'
 					set @AllDone = 1
 				end
-			else if @CurrentStartLocal <= @OldestTimeLocal
+			else if @CurrentStartLocal < @OldestTimeLocal
 				begin -- Finished the requested backfill
 					insert Annotation (TagName, Content, UserKey, DateTime) 
 						values('SysReplicationSyncQueueItems'+cast(@ReplicationKey as nvarchar(5)), 
