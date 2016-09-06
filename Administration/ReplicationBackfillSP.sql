@@ -213,6 +213,8 @@ begin
 						dbo.faaUser_ID(), getdate())
 					print convert(nvarchar(50),getdate(),120)+' Completed after '+convert(nvarchar(10),datediff(minute,@ExecutionStartUtc,getutcdate()))+' minutes.'
 					print 'Processed '''+convert(nvarchar(50),@OldestTimeLocal,120)+''' to '''+convert(nvarchar(50),@NewestTimeLocal,120)+''''
+					if (datediff(day,@OldestTimeLocal,@NewestTimeLocal)>0)
+						print 'Average '+ltrim(str((datediff(second,@ExecutionStartUtc,getutcdate())/60.0)/datediff(day,@OldestTimeLocal,@NewestTimeLocal),6,1))+' minutes processing per day of historical data'
 					set @AllDone = 1
 				end
 
