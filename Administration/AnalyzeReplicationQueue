@@ -1,0 +1,28 @@
+/*
+
+This set of queries gives a high-level view of how replication is configured and how it has operated over the last
+30 days. The results can be helpful as a first step in assessing the overall replication load on a system
+and then identify possible next steps. 
+
+*/
+
+select SourceTagName, SpanHours=datediff(hour,min(ModStartDateTimeUtc), max(ModEndDateTimeUtc)), AvgMins=avg(datediff(minute,ModStartDateTimeUtc, ModEndDateTimeUtc)), Oldest=min(ModStartDateTimeUtc), Newest=max(ModEndDateTimeUtc), Entries=count(*), RequestVersion, ReplicationServerName
+from ReplicationSyncRequestInfo
+group by ReplicationServerName, SourceTagName, RequestVersion
+order by SourceTagName, RequestVersion, ReplicationServerName
+
+declare @midnight datetime
+set @midnight = dateadd(d, 0, datediff(d, 0, getdate()))
+select TagName, StartDateTime, Average, StdDev, Maximum, PercentGood from AnalogSummaryHistory
+where TagName in ('SysReplicationSyncQueueItemsTotal','SysReplicationSyncQueueValuesPerSecTotal','SysTagHoursQueried')
+and StartDateTime >= dateadd(d, -30, @midnight)
+and EndDateTime <= @midnight
+and wwResolution=86400000
+--and wwResolution=3600000
+and wwRetrievalMode='cyclic'
+ 
+select SourceTagName, count(*)
+from ReplicationTagEntity
+group by SourceTagName
+order by count(*) desc
+ 
