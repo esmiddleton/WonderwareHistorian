@@ -6,11 +6,29 @@ and then identify possible next steps.
 
 */
 
+-- Summarizes the overall replication configuration by server/group/replication type
+select Server=s.ReplicationServerName, [Group]=g.ReplicationGroupName, 
+Type=case g.ReplicationTypeKey when 1 then 'Simple' when 2 then 'Analog Summary' when 3 then 'State Summary' else 'Unknown' end,
+Tags=count(*)
+from ReplicationTagEntity e
+join ReplicationGroup g on g.ReplicationGroupKey=e.ReplicationGroupKey
+join ReplicationServer s on e.ReplicationServerKey=s.ReplicationServerKey
+group by s.ReplicationServerName, g.ReplicationGroupName, g.ReplicationTypeKey
+order by ReplicationServerName
+
+-- Summarizes the overall replication configuration by source tag
+select SourceTagName, count(*)
+from ReplicationTagEntity
+group by SourceTagName
+order by count(*) desc
+
+-- Summarizes the current replication queue
 select SourceTagName, SpanHours=datediff(hour,min(ModStartDateTimeUtc), max(ModEndDateTimeUtc)), AvgMins=avg(datediff(minute,ModStartDateTimeUtc, ModEndDateTimeUtc)), Oldest=min(ModStartDateTimeUtc), Newest=max(ModEndDateTimeUtc), Entries=count(*), RequestVersion, ReplicationServerName
 from ReplicationSyncRequestInfo
 group by ReplicationServerName, SourceTagName, RequestVersion
 order by SourceTagName, RequestVersion, ReplicationServerName
 
+-- Summarizes the replication-related system loading over the last 30-days
 declare @midnight datetime
 set @midnight = dateadd(d, 0, datediff(d, 0, getdate()))
 select TagName, StartDateTime, Average, StdDev, Maximum, PercentGood from AnalogSummaryHistory
@@ -20,9 +38,12 @@ and EndDateTime <= @midnight
 and wwResolution=86400000
 --and wwResolution=3600000
 and wwRetrievalMode='cyclic'
- 
-select SourceTagName, count(*)
-from ReplicationTagEntity
-group by SourceTagName
-order by count(*) desc
- 
+order by TagName, StartDateTime
+
+-- List status messages logged by "wwkbBackfillReplication" (if any)
+select Content, u.UserName, DateCreated, TagName 
+from Annotation a
+left outer join UserDetail u on a.UserKey=u.UserKey
+where (Content like '%Beginning backfill for%' or Content like '%Added % items from%')
+and DateCreated >= dateadd(d, -30, @midnight)
+
