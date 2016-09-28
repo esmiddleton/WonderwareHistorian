@@ -11,7 +11,7 @@ This script can be used without additional charge with any licensed Wonderware H
 The terms of use are defined in your existing End User License Agreement for the 
 Wonderware Historian software.
 
-Modified: 	6-Sep-2016
+Modified: 	28-Sep-2016
 By:		E. Middleton
 
 */
@@ -25,14 +25,14 @@ By:		E. Middleton
 -- the Replication Server.
 --
 /*
-exec wwkbBackfillReplication '2016-05-01 00:00', '2016-07-01 0:00:00', 2
+exec wwkbBackfillReplication '2016-05-01 00:00', '2016-07-01 0:00:00', 1, 0
 
 select * from ReplicationSyncRequestInfo where ReplicationServerKey=2   order by earliestexecutiondatetimeUtc desc
 update ReplicationSyncRequestInfo set earliestexecutiondatetimeUtc=getutcdate() where ModEndDateTimeUtc < dateadd(minute,-5,getutcdate())
 update ReplicationSyncRequestInfo set earliestexecutiondatetimeUtc=getutcdate(), RequestVersion=0 where ReplicationServerKey=2
 delete ReplicationSyncRequest where ModEndDateTimeUtc<'2016-01-01'
 select * from ReplicationServer
-select * from Annotation where Content like (select '%'+ReplicationServerName+'%' from ReplicationServer where ReplicationServerKey=3)
+select top 100 * from Annotation where Content like (select '%'+ReplicationServerName+'%' from ReplicationServer where ReplicationServerKey=1) order by DateCreated desc
 */
 use Runtime
 exec aaUserDetailUpdate
@@ -46,7 +46,8 @@ go
 alter procedure wwkbBackfillReplication (
 	@OldestTimeLocal datetime, -- The oldest time for which to backfill, expressed in server local time
 	@NewestTimeLocal datetime, -- The newest time for which to backfill, expressed in server local time
-	@ReplicationKey int -- The key from the "ReplicationServer" table
+	@ReplicationKey int, -- The key from the "ReplicationServer" table
+	@LeastMinuteLimit int=null -- Only backfill for summary tags that have a period longer than this. Use "0" to include "simple" replicationed tags
  )
 as
 begin
@@ -67,7 +68,7 @@ begin
 	set @MaxQueueReady= @QueueSize + 250 -- Queue is ready for more when it has no more than this many entries
 
 	-- A template to use for entries made to the "Annotation" table to track status
-	declare @InvocationId nvarchar(50)
+	declare @InvocationId nvarchar(100)
 	select @InvocationId=convert(nvarchar(30),getdate(),120) + ' for ''' + ReplicationServerName + '''' from ReplicationServer where ReplicationServerKey=@ReplicationKey
 
 	-- Keep track of when we started executing, so we an estimate when we'll finish
@@ -92,6 +93,33 @@ begin
 	where datediff(minute,FromDate,@NextEndLocal) > 0
 	order by datediff(minute,FromDate,@NextEndLocal) asc, datediff(hour, FromDate, ToDate) desc
 
+	-- Variables for calculating progress & estimating completion time
+	declare @AverageRate float
+	declare @MinutesRemaining float
+	declare @MinutesElapsed float
+	declare @MinutesBackfilled float
+	declare @MinutesTotal float
+	set @MinutesTotal = datediff(minute,@OldestTimeLocal,@NewestTimeLocal)
+
+	-- When not specified, set a default summary limit based on the extent of the backfill
+	if @LeastMinuteLimit is null
+		set @LeastMinuteLimit = case
+			when @MinutesTotal > 1440*90 then 60 -- More than 3 months
+			when @MinutesTotal > 1440*31 then 5 -- More than one month
+			when @MinutesTotal > 1440*7 then 1 -- More than one week
+			else 0 end
+
+	if (@LeastMinuteLimit>0)
+		begin
+			set @InvocationId = @InvocationId + ' (' + cast(@LeastMinuteLimit as nvarchar(15))+ '+ min)'
+			print convert(nvarchar(50),getdate(),120)+' Only backfilling summaries of '+cast(@LeastMinuteLimit as nvarchar(15))+ ' minutes and longer.'
+		end
+	else
+		begin
+			set @InvocationId = @InvocationId + ' (all)'
+			print convert(nvarchar(50),getdate(),120)+' Backfilling raw values and summaries.'
+		end
+
 	-- Track how many times we've checked on the progress
 	declare @WaitCount int
 	declare @LogRate int
@@ -108,6 +136,7 @@ begin
 	-- Prepare for reporting progress through an annotation on a system tag
 	declare @RepTag nvarchar(50)
 	declare @RepComment nvarchar(1000)
+	declare @TimeStampedComment nvarchar(1000)
 	set @RepTag = 'SysReplicationSyncQueueItems'+cast(@ReplicationKey as nvarchar(5))
 
 	-- Record start of execution in the "Annotation" table
@@ -115,14 +144,6 @@ begin
 	print convert(nvarchar(50),getdate(),120)+@RepComment
 	set @RepComment = @InvocationId + @RepComment
 	exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
-
-	-- Variables for calculating progress & estimating completion time
-	declare @AverageRate float
-	declare @MinutesRemaining float
-	declare @MinutesElapsed float
-	declare @MinutesBackfilled float
-	declare @MinutesTotal float
-	set @MinutesTotal = datediff(minute,@OldestTimeLocal,@NewestTimeLocal)
 
 	while (@AllDone = 0)
 		begin
@@ -134,16 +155,20 @@ begin
 			insert into ReplicationSyncRequest ([ReplicationTagEntityKey] ,[RequestVersion] ,[ModStartDateTimeUtc] ,[ModEndDateTimeUtc] ,[EarliestExecutionDateTimeUtc], [ExecuteState])
 				select distinct e.ReplicationTagEntityKey, 0, dateadd(millisecond,1,@CurrentStartUtc), @CurrentEndUtc,GETUTCDATE(),0 --2
 				from ReplicationTagEntity e
+				join ReplicationGroup g on e.ReplicationGroupKey=g.ReplicationGroupKey
 				left outer join ReplicationSyncRequest q  -- Protects against duplicating existing queue records
 					on q.ReplicationTagEntityKey = e.ReplicationTagEntityKey
 					and q.ModStartDateTimeUtc = @CurrentStartLocal
 					and q.ModEndDateTimeUtc = @CurrentEndLocal
+				left outer join IntervalReplicationSchedule i on i.ReplicationScheduleKey=g.ReplicationScheduleKey
 				where e.ReplicationServerKey=@ReplicationKey
 					and q.ReplicationTagEntityKey is null
+					and isnull(i.Period * case i.Unit when 'Day' then 1440 when 'Hour' then 60 when 'Minute' then 1 else 0 end,0) >= @LeastMinuteLimit
 
 			-- Report progress to console
-			set @RepComment = convert(nvarchar(50),getdate(),120)+' Added ' + convert(nvarchar(10),@EntityCount) + ' items from ' + convert(nvarchar(50),@CurrentStartLocal,120) + ' to ' + convert(nvarchar(50),@CurrentEndLocal,120)
-			raiserror (@RepComment, 0, 1) with nowait -- Used to force update in Management Studio so messages are visible
+			set @RepComment = ' Added ' + convert(nvarchar(10),@EntityCount) + ' items from ' + convert(nvarchar(50),@CurrentStartLocal,120) + ' to ' + convert(nvarchar(50),@CurrentEndLocal,120)
+			set @TimeStampedComment = convert(nvarchar(50),getdate(),120)+' '+@RepComment
+			raiserror (@TimeStampedComment, 0, 1) with nowait -- Used to force update in Management Studio so messages are visible
 
 			-- Estimate time remaining
 			set @MinutesBackfilled = datediff(minute,@CurrentEndLocal,@NewestTimeLocal)
@@ -169,8 +194,9 @@ begin
 					if (@WaitCount % @LogRate = 0)
 						begin
 							set @QueueSize = (select count(*) from ReplicationSyncRequestInfo where ReplicationServerKey=@ReplicationKey)
-							set @RepComment = convert(nvarchar(50),getdate(),120)+ ' Backfilling remaining ' + convert(nvarchar(10),@QueueSize) + ' items starting at ' + convert(nvarchar(50),@CurrentStartLocal,120)
-							raiserror (@RepComment, 0, 1) with nowait -- Used to force update in Management Studio so messages are visible
+							set @RepComment = 'Backfilling remaining ' + convert(nvarchar(10),@QueueSize) + ' items starting at ' + convert(nvarchar(50),@CurrentStartLocal,120)
+							set @TimeStampedComment = convert(nvarchar(50),getdate(),120)+' '+@RepComment
+							raiserror (@TimeStampedComment, 0, 1) with nowait -- Used to force update in Management Studio so messages are visible
 						end
 				end
 
@@ -185,7 +211,7 @@ begin
 			@CurrentEndLocal=ToDate,
 			@AllDone=0
 			from HistoryBlock
-			where datediff(minute,FromDate,@NextEndLocal) > 0
+			where datediff(minute,FromDate,@NextEndLocal) > 0 and datediff(minute,FromDate,@NextEndLocal) < 1441
 			order by datediff(minute,FromDate,@NextEndLocal) asc, datediff(hour, FromDate, ToDate) desc
 
 			-- Management Studio starts queuing messages above 500, so slow the logging rate after we first get started
@@ -219,4 +245,7 @@ begin
 				end
 
 		end
+
+		if (@InvocationId is NULL)
+			print '**** The ID you provided for the replication server does not exist'
 end
