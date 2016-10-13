@@ -11,7 +11,7 @@ This script can be used without additional charge with any licensed Wonderware H
 The terms of use are defined in your existing End User License Agreement for the 
 Wonderware Historian software.
 
-Modified: 	28-Sep-2016
+Modified: 	13-Oct-2016
 By:		E. Middleton
 
 */
@@ -25,7 +25,7 @@ By:		E. Middleton
 -- the Replication Server.
 --
 /*
-exec wwkbBackfillReplication '2016-05-01 00:00', '2016-07-01 0:00:00', 1, 0
+exec wwkbBackfillReplication '2016-04-01 00:00', '2016-04-10 0:00:00', 1, 0, '%'
 
 select * from ReplicationSyncRequestInfo where ReplicationServerKey=2   order by earliestexecutiondatetimeUtc desc
 update ReplicationSyncRequestInfo set earliestexecutiondatetimeUtc=getutcdate() where ModEndDateTimeUtc < dateadd(minute,-5,getutcdate())
@@ -47,7 +47,8 @@ alter procedure wwkbBackfillReplication (
 	@OldestTimeLocal datetime, -- The oldest time for which to backfill, expressed in server local time
 	@NewestTimeLocal datetime, -- The newest time for which to backfill, expressed in server local time
 	@ReplicationKey int, -- The key from the "ReplicationServer" table
-	@LeastMinuteLimit int=null -- Only backfill for summary tags that have a period longer than this. Use "0" to include "simple" replicationed tags
+	@LeastMinuteLimit int=null, -- Only backfill for summary tags that have a period longer than this. Use "0" to include "simple" replicationed tags
+	@TagNameFilter nvarchar(50)='%' -- Only backfill source tags which match this filter
  )
 as
 begin
@@ -66,6 +67,30 @@ begin
 	declare @QueueSize int
 	set @QueueSize = (select count(*) from ReplicationSyncRequestInfo where ReplicationServerKey=@ReplicationKey)
 	set @MaxQueueReady= @QueueSize + 250 -- Queue is ready for more when it has no more than this many entries
+
+	-- Add some protections against re-running the backfill for the same period
+	declare @OldEntries int;
+	set @OldEntries =(select count(*) from ReplicationSyncRequestInfo 
+		 where ReplicationServerKey=@ReplicationKey 
+		 and datediff(day,ModEndDateTimeUtc,getutcdate()) > 7)
+	if (@OldEntries > 0)
+		begin
+			print 'There are already queue '+convert(nvarchar(10),@OldEntries)+' entries for the period before '+convert(nvarchar(30),dateadd(day,-7,getdate()),120)+' in the queue.'
+			print 'Do NOT re-run this procedure for the same tags and time period.'
+			print 'If you really understand the ramifications and intend to re-run it for the same period,'
+			print 'wait for these older queue entries to be processed and re-run the procedure.'
+			print 'Exiting without adding any backfill requests.'
+			return
+		end
+
+	-- Add some proitections against overloading the queue from the start
+	if (@QueueSize > 500) 
+		begin
+			print 'There are already too many entries ('+convert(nvarchar(10),@QueueSize)+') in the replication queue for this server.'
+			print 'Wait for this to fall below 500 and re-run the procedure.'
+			print 'Exiting without adding any backfill requests.'
+			return
+		end
 
 	-- A template to use for entries made to the "Annotation" table to track status
 	declare @InvocationId nvarchar(100)
@@ -162,6 +187,7 @@ begin
 					and q.ModEndDateTimeUtc = @CurrentEndLocal
 				left outer join IntervalReplicationSchedule i on i.ReplicationScheduleKey=g.ReplicationScheduleKey
 				where e.ReplicationServerKey=@ReplicationKey
+					and e.SourceTagName like @TagNameFilter
 					and q.ReplicationTagEntityKey is null
 					and isnull(i.Period * case i.Unit when 'Day' then 1440 when 'Hour' then 60 when 'Minute' then 1 else 0 end,0) >= @LeastMinuteLimit
 
