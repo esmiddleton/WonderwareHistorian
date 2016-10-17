@@ -11,7 +11,7 @@ This script can be used without additional charge with any licensed Wonderware H
 The terms of use are defined in your existing End User License Agreement for the 
 Wonderware Historian software.
 
-Modified: 	13-Oct-2016
+Modified: 	17-Oct-2016
 By:		E. Middleton
 
 */
@@ -115,7 +115,7 @@ begin
 	@CurrentStartLocal=FromDate,
 	@CurrentEndLocal=ToDate
 	from HistoryBlock
-	where datediff(minute,FromDate,@NextEndLocal) > 0
+	where datediff(minute,FromDate,@NextEndLocal) >= 0
 	order by datediff(minute,FromDate,@NextEndLocal) asc, datediff(hour, FromDate, ToDate) desc
 
 	-- Variables for calculating progress & estimating completion time
@@ -237,7 +237,7 @@ begin
 			@CurrentEndLocal=ToDate,
 			@AllDone=0
 			from HistoryBlock
-			where datediff(minute,FromDate,@NextEndLocal) > 0 and datediff(minute,FromDate,@NextEndLocal) < 1441
+			where datediff(minute,FromDate,@NextEndLocal) >= 0 and datediff(minute,FromDate,@NextEndLocal) < 1441
 			order by datediff(minute,FromDate,@NextEndLocal) asc, datediff(hour, FromDate, ToDate) desc
 
 			-- Management Studio starts queuing messages above 500, so slow the logging rate after we first get started
