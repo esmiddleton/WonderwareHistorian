@@ -23,6 +23,10 @@ To add all "missing" replication and commit the changes:
 	EXEC wwkbAddMissingReplicatedTags
 
 
+Modified:   09-Dec-2016
+By:         E. Middleton
+
+
 OPTIONAL
 --------
 This script also includes a database trigger that will automatically create the 
@@ -44,6 +48,17 @@ GO
 IF NOT EXISTS (SELECT * FROM SystemParameter WHERE Name = 'ReplicationDefaultGroup')
 	INSERT INTO SystemParameter (Name, Value, Editable, Description, Status)
 	VALUES ('ReplicationDefaultGroup','(Simple)',1,'Name of default replication group: "(Simple)"=Simple Replication, "*"=All, "(None)"=Disable',0)
+
+-- Add a new Public Name Space Group for exclusions
+IF NOT EXISTS (SELECT * FROM PublicNameSpace WHERE OriginalName <> 'Exclude From Auto-Replication') 
+BEGIN 
+	DECLARE @Parent INT
+	SET @Parent=(SELECT TOP 1 NameKey FROM PublicNameSpace WHERE OriginalName='Replication Sources' ORDER BY NameKey)
+
+	INSERT PublicNameSpace ([Type], Name, ConfigStor, ParentKey, OriginalName)
+	VALUES(1000000, 'Exclude From Auto-Replication', null, 8, 'Exclude From Auto-Replication')
+END
+
 
 -- Delete the existing (if any) stored procedure
 IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[wwkbAddMissingReplicatedTags]') AND type in (N'P', N'PC'))
@@ -87,6 +102,11 @@ BEGIN
 	IF @DEBUG = 1
 		SELECT * FROM @DefGroupList ORDER BY ReplicationGroupKey
 
+	-- Use a public group to permit explicit exlcusions
+	DECLARE @ExcludeGroup INT
+	SET @ExcludeGroup=(SELECT TOP 1 NameKey FROM PublicNameSpace WHERE OriginalName = 'Exclude From Auto-Replication' ORDER BY NameKey)
+
+
 	-- Define a cursor to step through the list of "missing" Replication Entities
 	DECLARE AddReplicatedTag CURSOR LOCAL FAST_FORWARD FOR
 		SELECT 
@@ -117,6 +137,13 @@ BEGIN
 			OR (t.TagType=2 AND g.ReplicationTypeKey = 3) -- Is a StateSummary for a discrete tag
 			OR (t.TagType=3 AND g.ReplicationTypeKey = 3) -- Is a StateSummary for a string tag
 		)
+		AND t.TagName NOT IN ( -- Not in the exclude list
+			SELECT TagName FROM PublicGroupTag g
+			JOIN TagRef r ON g.wwDomainTagKey = r.wwDomainTagKey
+			WHERE g.NameKey = @ExcludeGroup
+		)
+
+
 
 	-- Use the cursor above to add each missing Replication Entity
 	OPEN AddReplicatedTag
