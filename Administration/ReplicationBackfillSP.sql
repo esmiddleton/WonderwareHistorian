@@ -344,3 +344,4 @@ begin
 		if (@InvocationId is NULL)
 			print '**** The ID you provided for the replication server does not exist'
 end
+
