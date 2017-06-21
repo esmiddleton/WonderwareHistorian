@@ -4,6 +4,58 @@
 !!! This script makes UNSUPPORTED modifications to your Runtime database !!!
 !!!                       USE AT YOUR OWN RISK                           !!!
 
+Description
+-----------
+The stored procedure below will create synch queue entries for configured replication tags for the specified time period
+on the indicated Replication Server. It can optionally include a tagname filter. Adding these queue entries has the 
+effect of "back replicating" one day at a time, starting with the most recent time and moving backwards. 
+
+This stored procedure is a long-running one that incorporates significant wait time
+for the Historian Replication processing to complete before adding more backfill items. It tracks/reports
+progress using entries in the "Annotation" table for the "SysReplicationSyncQueueItemsN" tag, where "N" is the key of
+the Replication Server. 
+
+To prepare your Historian for back-replication, copy this entire script into a "New Query" window in SQL Server Management Studio
+and press "Execute". That will create the stored procedure and all its dependencies. You can then execute the stored procedure as 
+described below under "Usage".
+
+
+Usage
+-----
+
+	exec wwkbBackfillReplication <Oldest Time>, <Newest Time>, <Replication Server Key>, <Minimum Period>, <Tag Filter>
+
+Where:
+
+	Oldest Time / Newest Time 
+		Time period expressed in local server time
+
+	Replication Server Key
+		The key of the target "tier 2". You can find the key for a replication server by querying the "tier 1" using:
+			select * from ReplicationServer
+
+	Minimum Period (in minutes--optional)
+		Will only queue entries for summary replication periods longer then the specified number of minutes. If omitted,
+		the period will depend upon the overall replication duration specified above. Use "0" to queue items for "simple"
+		replication (all raw values)
+
+	Tag Filter (optional--defaults to ALL tags)
+		A tag name filter for the source tag. Uses the same syntax as a SQL "LIKE" clause
+
+Examples
+
+	exec wwkbBackfillReplication '2016-04-01 00:00', '2016-04-10 0:00:00', 1
+	exec wwkbBackfillReplication '2016-04-01 00:00', '2016-04-10 0:00:00', 1, 0, '%.PV'
+
+
+Limitations
+-----------
+The design of the "queued replication" leveraged by this stored procedure addresses recovering from occassional communications 
+outages between the "tier 1" source Historian and the "tier 2". Used incorrectly, this stored procedure can overload the 
+queued replication system, either by adding excessive query load on the "tier 1" or by distributing the data sent to "tier 2" 
+across too broad of time period all at once. There are safeguards included in the stored procedure to protect against those
+cases, but do not attempt to circumvent them.
+
 
 License
 -------
@@ -11,21 +63,19 @@ This script can be used without additional charge with any licensed Wonderware H
 The terms of use are defined in your existing End User License Agreement for the 
 Wonderware Historian software.
 
-Modified: 	17-Oct-2016
-By:		E. Middleton
+Update Info
+-----------
+The latest version of this script is available at:
+	https://github.com/esmiddleton/WonderwareHistorian/tree/master/Administration
+
+
+Modified: 21-Jun-2017
+By:		  E. Middleton
 
 */
 
-
--- The stored procedure below will create synch queue entries for ALL configured replication for the specified time period
--- on the indicated Replication Server. This has the effect of "back replicating" one day at a time, starting with the most
--- recent time and moving backwards. This stored procedure is a long-running one that incorporates significant wait time
--- for the Historian Replication processing to complete before adding more backfill items. It tracks/reports
--- progress using entries in the "Annotation" table for the "SysReplicationSyncQueueItemsN" tag, where "N" is the key of
--- the Replication Server.
---
 /*
-exec wwkbBackfillReplication '2016-04-01 00:00', '2016-04-10 0:00:00', 1, 0, '%'
+-- The following queries are useful for checking & monitoring the Replication Queue
 
 select * from ReplicationSyncRequestInfo where ReplicationServerKey=2   order by earliestexecutiondatetimeUtc desc
 update ReplicationSyncRequestInfo set earliestexecutiondatetimeUtc=getutcdate() where ModEndDateTimeUtc < dateadd(minute,-5,getutcdate())
@@ -33,6 +83,7 @@ update ReplicationSyncRequestInfo set earliestexecutiondatetimeUtc=getutcdate(),
 delete ReplicationSyncRequest where ModEndDateTimeUtc<'2016-01-01'
 select * from ReplicationServer
 select top 100 * from Annotation where Content like (select '%'+ReplicationServerName+'%' from ReplicationServer where ReplicationServerKey=1) order by DateCreated desc
+
 */
 use Runtime
 exec aaUserDetailUpdate
@@ -63,6 +114,12 @@ begin
 	set @WaitTime='00:01:00' -- 1-minute wait between checking the queue level
 	set @MaxWaitCount=240 -- Wait this many times for the queue to be cleared before timing out
 
+	-- Prepare for reporting progress through an annotation on a system tag
+	declare @RepTag nvarchar(50)
+	declare @RepComment nvarchar(1000)
+	declare @TimeStampedComment nvarchar(1000)
+	set @RepTag = 'SysReplicationSyncQueueItems'+cast(@ReplicationKey as nvarchar(5))
+
 	-- The current size of the replication synch queue
 	declare @QueueSize int
 	set @QueueSize = (select count(*) from ReplicationSyncRequestInfo where ReplicationServerKey=@ReplicationKey)
@@ -70,9 +127,12 @@ begin
 
 	-- Add some protections against re-running the backfill for the same period
 	declare @OldEntries int;
-	set @OldEntries =(select count(*) from ReplicationSyncRequestInfo 
+	declare @QueueDays int
+	select @OldEntries=count(*), @QueueDays=datediff(day,min(ModStartDateTimeUtc), max(ModEndDateTimeUtc)) 
+		 from ReplicationSyncRequestInfo 
 		 where ReplicationServerKey=@ReplicationKey 
-		 and datediff(day,ModEndDateTimeUtc,getutcdate()) > 7)
+		 and datediff(day,ModEndDateTimeUtc,getutcdate()) > 7
+
 	if (@OldEntries > 0)
 		begin
 			print 'There are already queue '+convert(nvarchar(10),@OldEntries)+' entries for the period before '+convert(nvarchar(30),dateadd(day,-7,getdate()),120)+' in the queue.'
@@ -80,15 +140,30 @@ begin
 			print 'If you really understand the ramifications and intend to re-run it for the same period,'
 			print 'wait for these older queue entries to be processed and re-run the procedure.'
 			print 'Exiting without adding any backfill requests.'
+			set @RepComment = '*** Too many old entries already in the queue: '+convert(nvarchar(10),@OldEntries)
+			exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
 			return
 		end
 
-	-- Add some proitections against overloading the queue from the start
+	-- Add some protections against overloading the queue from the start
 	if (@QueueSize > 500) 
 		begin
 			print 'There are already too many entries ('+convert(nvarchar(10),@QueueSize)+') in the replication queue for this server.'
 			print 'Wait for this to fall below 500 and re-run the procedure.'
 			print 'Exiting without adding any backfill requests.'
+			set @RepComment = '*** Too many overall entries already in the queue: '+convert(nvarchar(10),@QueueSize)
+			exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
+			return
+		end
+
+	-- Add some protections against a queue distributed across too much time (can be a problem for the "tier 2")
+	if (@QueueDays > 15) 
+		begin
+			print 'There are entries spanning too many days ('+convert(nvarchar(10),@QueueDays)+' days) already in the replication queue for this server.'
+			print 'Wait for this to fall below 15 days and re-run the procedure to avoid overloading the "tier 2" server.'
+			print 'Exiting without adding any backfill requests.'
+			set @RepComment = '*** Existing entries spanning too many days already in the queue: '+convert(nvarchar(10),@QueueDays)
+			exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
 			return
 		end
 
@@ -157,12 +232,6 @@ begin
 	-- Find how many tags are configured to replicate
 	declare @EntityCount int
 	set @EntityCount = (select count(*) from ReplicationTagEntity where ReplicationServerKey=@ReplicationKey)
-
-	-- Prepare for reporting progress through an annotation on a system tag
-	declare @RepTag nvarchar(50)
-	declare @RepComment nvarchar(1000)
-	declare @TimeStampedComment nvarchar(1000)
-	set @RepTag = 'SysReplicationSyncQueueItems'+cast(@ReplicationKey as nvarchar(5))
 
 	-- Record start of execution in the "Annotation" table
 	set @RepComment = ' Beginning backfill for ' + convert(nvarchar(10),@EntityCount) + ' tags from ''' + convert(nvarchar(30),@OldestTimeLocal,120)+''' to '''+ convert(nvarchar(30),@NewestTimeLocal,120)+''''
@@ -275,3 +344,4 @@ begin
 		if (@InvocationId is NULL)
 			print '**** The ID you provided for the replication server does not exist'
 end
+
