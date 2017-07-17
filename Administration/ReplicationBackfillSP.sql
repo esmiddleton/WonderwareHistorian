@@ -303,7 +303,7 @@ begin
 			-- Give Replication some time to process the items just added to the queue
 			set @WaitCount = 0
 			set @QueueSize = (select count(*) from ReplicationSyncRequestInfo where ReplicationServerKey=@ReplicationKey)
-			while @WaitCount < @MaxWaitCount and @QueueSize > @MaxQueueReady
+			while (@WaitCount < @MaxWaitCount and @QueueSize > @MaxQueueReady) or (@WaitCount=0)
 				begin
 					set @WaitCount = @WaitCount + 1
 					waitfor delay @WaitTime
