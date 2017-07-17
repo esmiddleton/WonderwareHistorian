@@ -69,7 +69,7 @@ The latest version of this script is available at:
 	https://github.com/esmiddleton/WonderwareHistorian/tree/master/Administration
 
 
-Modified: 21-Jun-2017
+Modified: 17-Jul-2017
 By:		  E. Middleton
 
 */
@@ -252,8 +252,8 @@ begin
 				join ReplicationGroup g on e.ReplicationGroupKey=g.ReplicationGroupKey
 				left outer join ReplicationSyncRequest q  -- Protects against duplicating existing queue records
 					on q.ReplicationTagEntityKey = e.ReplicationTagEntityKey
-					and q.ModStartDateTimeUtc = @CurrentStartLocal
-					and q.ModEndDateTimeUtc = @CurrentEndLocal
+					and q.ModStartDateTimeUtc = @CurrentStartUtc
+					and q.ModEndDateTimeUtc = @CurrentEndUtc
 				left outer join IntervalReplicationSchedule i on i.ReplicationScheduleKey=g.ReplicationScheduleKey
 				where e.ReplicationServerKey=@ReplicationKey
 					and e.SourceTagName like @TagNameFilter
@@ -306,7 +306,7 @@ begin
 			@CurrentEndLocal=ToDate,
 			@AllDone=0
 			from HistoryBlock
-			where datediff(minute,FromDate,@NextEndLocal) >= 0 and datediff(minute,FromDate,@NextEndLocal) < 1441
+			where datediff(minute,FromDate,@NextEndLocal) > 0 --and datediff(minute,FromDate,@NextEndLocal) < 1441
 			order by datediff(minute,FromDate,@NextEndLocal) asc, datediff(hour, FromDate, ToDate) desc
 
 			-- Management Studio starts queuing messages above 500, so slow the logging rate after we first get started
