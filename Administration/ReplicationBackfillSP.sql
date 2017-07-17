@@ -131,7 +131,7 @@ begin
 	select @OldEntries=count(*), @QueueDays=datediff(day,min(ModStartDateTimeUtc), max(ModEndDateTimeUtc)) 
 		 from ReplicationSyncRequestInfo 
 		 where ReplicationServerKey=@ReplicationKey 
-		 and datediff(day,ModEndDateTimeUtc,getutcdate()) > 7
+		 and datediff(day,ModEndDateTimeUtc,getutcdate()) > 3
 
 	if (@OldEntries > 0)
 		begin
@@ -159,7 +159,7 @@ begin
 		end
 
 	-- Add some protections against a queue distributed across too much time (can be a problem for the "tier 2")
-	if (@QueueDays > 15) 
+	if (@QueueDays > 5) 
 		begin
 			print 'There are entries spanning too many days ('+convert(nvarchar(10),@QueueDays)+' days) already in the replication queue for this server.'
 			print 'Wait for this to fall below 15 days and re-run the procedure to avoid overloading the "tier 2" server.'
@@ -289,7 +289,7 @@ begin
 			-- Estimate time remaining
 			set @MinutesBackfilled = datediff(minute,@CurrentEndLocal,@NewestTimeLocal)
 			set @MinutesElapsed = datediff(minute,@ExecutionStartUtc,getutcdate())
-			if (@MinutesBackfilled > 0) and (@MinutesTotal>0)
+			if (@MinutesBackfilled > 0) and (@MinutesTotal>0) and (@MinutesElapsed > 0)
 				begin
 					set @AverageRate = @MinutesElapsed / @MinutesBackfilled 
 					set @MinutesRemaining = (@MinutesTotal - @MinutesBackfilled) * @AverageRate
