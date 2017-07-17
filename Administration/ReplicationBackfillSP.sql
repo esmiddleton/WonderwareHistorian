@@ -125,7 +125,7 @@ begin
 	set @QueueSize = (select count(*) from ReplicationSyncRequestInfo where ReplicationServerKey=@ReplicationKey)
 	set @MaxQueueReady= @QueueSize + 250 -- Queue is ready for more when it has no more than this many entries
 
-	-- Add some protections against re-running the backfill for the same period
+	-- Add some protections against running the backfill after there are already older entries in the queue
 	declare @OldEntries int;
 	declare @QueueDays int
 	select @OldEntries=count(*), @QueueDays=datediff(day,min(ModStartDateTimeUtc), max(ModEndDateTimeUtc)) 
@@ -135,7 +135,7 @@ begin
 
 	if (@OldEntries > 0)
 		begin
-			print 'There are already queue '+convert(nvarchar(10),@OldEntries)+' entries for the period before '+convert(nvarchar(30),dateadd(day,-7,getdate()),120)+' in the queue.'
+			print 'There are already '+convert(nvarchar(10),@OldEntries)+' entries for the period before '+convert(nvarchar(30),dateadd(day,-7,getdate()),120)+' in the queue.'
 			print 'Do NOT re-run this procedure for the same tags and time period.'
 			print 'If you really understand the ramifications and intend to re-run it for the same period,'
 			print 'wait for these older queue entries to be processed and re-run the procedure.'
@@ -144,6 +144,8 @@ begin
 			exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
 			return
 		end
+
+
 
 	-- Add some protections against overloading the queue from the start
 	if (@QueueSize > 500) 
@@ -193,7 +195,26 @@ begin
 	where datediff(minute,FromDate,@NextEndLocal) >= 0
 	order by datediff(minute,FromDate,@NextEndLocal) asc, datediff(hour, FromDate, ToDate) desc
 
-	-- Variables for calculating progress & estimating completion time
+	-- Add some protections against re-running the backfill for the same period
+	select @OldEntries=count(*)
+		 from ReplicationSyncRequestInfo 
+		 where ReplicationServerKey=@ReplicationKey 
+		 and ModEndDateTimeUtc between @CurrentStartUtc and @CurrentEndUtc
+		 and SourceTagName like @TagNameFilter
+
+	if (@OldEntries > 0)
+		begin
+			print 'There are already '+convert(nvarchar(10),@OldEntries)+' entries for the period between '+convert(nvarchar(30),@CurrentStartLocal,120)+' and '+convert(nvarchar(30),@CurrentEndLocal,120)+'.'
+			print 'Do NOT re-run this procedure for the same tags and time period.'
+			print 'If you really understand the ramifications and intend to re-run it for the same period,'
+			print 'wait for these older queue entries to be processed and re-run the procedure.'
+			print 'Exiting without adding any backfill requests.'
+			set @RepComment = '*** Too many old entries already in the queue: '+convert(nvarchar(10),@OldEntries)
+			exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
+			return
+		end
+		
+		-- Variables for calculating progress & estimating completion time
 	declare @AverageRate float
 	declare @MinutesRemaining float
 	declare @MinutesElapsed float
@@ -344,4 +365,3 @@ begin
 		if (@InvocationId is NULL)
 			print '**** The ID you provided for the replication server does not exist'
 end
-
