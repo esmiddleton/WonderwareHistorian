@@ -4,7 +4,7 @@ Hour Of Day Statistics For The Last Month
 
 In applications where there is a regular pattern based on the time of day (building automation, utilities, etc.)
 it is often helpful to compare current signals with how those signals have varied in the past for the same hour. 
-This example includes two variations on theme. Both group the statistics by hour of the day--one has the end time 
+This example includes two variations on that theme. Both group the statistics by hour of the day--one has the end time 
 at midnight tonight (in the future) and the other ends with the current hour.
 
 These examples were inspired by an application created by:
