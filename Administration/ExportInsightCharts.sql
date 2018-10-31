@@ -17,6 +17,9 @@ Stored procedures that export charts by generating a SQL script to recreate them
 	
 									exec Unsupported.ChartExportAll
 
+To use, execute one of the above stored procedures and then copy/paste or save the output to a file.
+Then, execute the output on the target computer with SQL Server Management Studio.
+
 Tested with Historian 2017 Update 2 (17.2)
 									
 */
