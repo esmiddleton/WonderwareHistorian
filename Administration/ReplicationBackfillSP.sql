@@ -69,7 +69,7 @@ The latest version of this script is available at:
 	https://github.com/esmiddleton/WonderwareHistorian/tree/master/Administration
 
 
-Modified: 17-Jul-2017
+Modified: 1-Sep-2020
 By:		  E. Middleton
 
 */
@@ -336,10 +336,8 @@ begin
 
 			if @QueueSize > @MaxQueueReady
 				begin -- Queue processing is taking longer than  expected--something may be wrong, so bail out
-					insert Annotation (TagName, Content, UserKey, DateTime) 
-						values('SysReplicationSyncQueueItems'+cast(@ReplicationKey as nvarchar(5)), 
-						@InvocationId+' backfill timed out',
-						dbo.faaUser_ID(), getdate())
+					set @RepComment = @InvocationId+' backfill timed out'
+					exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
 					print convert(nvarchar(50),getdate(),120)+' Timed out after running '+convert(nvarchar(10),datediff(minute,@ExecutionStartUtc,getutcdate()))+' minutes.'
 					print ' '
 					print 'After the queue is cleared, you can resume with:'
@@ -349,10 +347,8 @@ begin
 				end
 			else if @CurrentStartLocal < @OldestTimeLocal
 				begin -- Finished the requested backfill
-					insert Annotation (TagName, Content, UserKey, DateTime) 
-						values('SysReplicationSyncQueueItems'+cast(@ReplicationKey as nvarchar(5)), 
-						@InvocationId+' completed',
-						dbo.faaUser_ID(), getdate())
+					set @RepComment = @InvocationId+' completed'
+					exec aaAnnotationInsert @RepTag, null, null, null, @RepComment
 					print convert(nvarchar(50),getdate(),120)+' Completed after '+convert(nvarchar(10),datediff(minute,@ExecutionStartUtc,getutcdate()))+' minutes.'
 					print 'Processed '''+convert(nvarchar(50),@OldestTimeLocal,120)+''' to '''+convert(nvarchar(50),@NewestTimeLocal,120)+''''
 					if (datediff(day,@OldestTimeLocal,@NewestTimeLocal)>0)
