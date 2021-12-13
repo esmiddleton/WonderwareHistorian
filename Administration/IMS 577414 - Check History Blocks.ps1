@@ -11,7 +11,7 @@
 #
 #    Run this script locally on the Historian server.
 #
-#    Updated: 10-Dec-2021
+#    Updated: 13-Dec-2021
 
 # Get the current list of storage locations from the local "Runtime" database
 Write-Host -ForegroundColor Gray 'Reading storage locations...'
@@ -22,7 +22,7 @@ $Connection.ConnectionString = "server='localhost';database='Runtime';trusted_co
 $Connection.Open()
 $Command = New-Object System.Data.SQLClient.SQLCommand
 $Command.Connection = $Connection
-$Command.CommandText = "select Path from StorageLocation where left(Path,3) <> 'rr:' and StorageType < 5"
+$Command.CommandText = "select Path, MaxCount=case TimeUnitId when 1 then 24 / BlockDuration when 2 then 1 end from StorageLocation l join StorageShard s on l.ShardId = s.ShardId where left(Path,3) <> 'rr:' and StorageType < 5"
 $Reader = $Command.ExecuteReader()
 $StorageLocations.Load($Reader)
 $Connection.Close()
@@ -32,28 +32,31 @@ $Problems = 0
 $StorageLocations | ForEach-Object {
 
     $Blocks = Get-ChildItem -Path $_.Path  -ErrorAction stop
+    $MaxCount = $_.MaxCount
     Write-Host -ForegroundColor Gray 'Checking' ($Blocks.Length) 'blocks from' $_.Path
     $Blocks | ForEach-Object {
 
-    $Suffix = $_.BaseName.SubString( $_.BaseName.length - 4, 4)
+        $BlockParts = $_.BaseName -split '_'
+        $BlockNumber = [int]$BlockParts[1]
 
         $StatusFile = $_.FullName + '\blockstatus.dat'
         if ( -Not( Test-Path $StatusFile -PathType Leaf) ) {
             $Problems = $Problems + 1
             Write-Host -ForegroundColor Yellow '  ' $_.FullName 'missing "blockstatus.dat"'
 
-            $BlockParts = $_.BaseName -split '_'
-            $BlockNumber = [int]$BlockParts[1]
             $NextBlock = $_.Parent.FullName + '\' + $BlockParts[0] + '_' + ([string]($BlockNumber + 1)).PadLeft(3,'0')
 
             if ( Test-Path $NextBlock ) {
                 $Problems = $Problems + 1
                 Write-Host -ForegroundColor Yellow '  ' $NextBlock 'possible overlapped block'
             }
+        }
 
+        if ( $BlockNumber -gt $MaxCount ) {
+            $Problems = $Problems + 1
+            Write-Host -ForegroundColor Yellow '  ' $_.FullName 'exceeded expected block count for the day'
         }
     }
 }
 
 Write-Host 'Done. Found' $Problems 'potential problems'
-
