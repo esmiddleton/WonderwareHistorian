@@ -6,8 +6,9 @@
 #    new history blocks in some edge cases.
 #
 #    The incomplete blocks will be missing the "blockstatus.dat" file. When this is missing, 
-#    an overlapping block with a name ending with "_002" (instead of the usual "_001") may also
-#    be created. This script will help users quickly find history blocks with these potential problems.
+#    for "daily" history blocks an overlapping block with a name ending with "_002" (instead of the usual "_001") 
+#    may also be created (or, for "hourly" history blocks, there may be a "_025"). This script will help users quickly 
+#    find history blocks with these potential problems.
 #
 #    Run this script locally on the Historian server.
 #
@@ -60,3 +61,4 @@ $StorageLocations | ForEach-Object {
 }
 
 Write-Host 'Done. Found' $Problems 'potential problems'
+
