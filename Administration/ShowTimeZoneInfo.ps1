@@ -1,8 +1,5 @@
-﻿#
-#   Report Time Zone Details
 #
-# Useful to diagnose configuration problems with Windows time zone settings
-# and to illustrate how those problems manifest themselves, independent of AVEVA software
+#   Report Time Zone Details
 #
 # Modified: 18-Feb-2022
 # By:       E Middleton
@@ -37,12 +34,19 @@ $SystemIsUTC = ( (Get-ItemProperty -Path Registry::HKLM\SYSTEM\CurrentControlSet
 $Adjust4DST = ( (Get-ItemProperty -Path Registry::HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation).DynamicDaylightTimeDisabled -eq 0)  # Current setting of "Automatically adjust for DST"
 $DSTStart = ([TimeZone]::CurrentTimeZone.GetDaylightChanges( [DateTime]::Now.Year ).Start)                                                       # Setting at the time the .NET framework initialized
 $StdOffset = [TimeZoneInfo]::Local.BaseUtcOffset.TotalMinutes
-$DSTObserved = ([TimeZoneInfo]::Local.SupportsDaylightSavingTime)
+$DSTObservedActive = ([TimeZoneInfo]::Local.SupportsDaylightSavingTime)
+
+$TZName = (Get-ItemProperty -Path Registry::HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation).TimeZoneKeyName
+$TZInfoKeyName = "Registry::HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Time Zones\" + $TZName
+$TZInfo = (Get-ItemProperty -Path $TZInfoKeyName).TZI
+$DSTObservedTrue = ($TZInfo[14] -gt 0) -or ($TZInfo[30] -gt 0)
+
 
 Write-Host ""
 Write-Host "Current Time Zone`t`t" ([TimeZone]::CurrentTimeZone.StandardName)
 Write-Host "Standard time offset`t" $StdOffset
-Write-Host "Time Zone Observes DST`t" $DSTObserved
+Write-Host "Observes DST (True)`t`t" $DSTObservedTrue
+Write-Host "Observes DST (Active)`t" $DSTObservedActive
 Write-Host "Current Adjust DST`t`t" $Adjust4DST
 Write-Host "Startup Adjust DST`t`t" ($DSTStart.Year -ne 1)
 Write-Host "DST Begins`t`t`t`t" ($DSTStart.ToString("yyyy-MM-dd"))
@@ -64,7 +68,7 @@ $ConsistentOffset = ShowDateInfo "E. Midyear from UTC`t" ([DateTime]::SpecifyKin
 $ConsistentOffset = ShowDateInfo "F. Midyear from Local" ([DateTime]::SpecifyKind([DateTime]::FromOADate($RefDate + 182 + $StdOffset/1440.0),[DateTimeKind]::Local)) $StdOffset $ConsistentOffset
 
 Write-Host ""
-if ($ConsistentOffset -and $DSTObserved) 
+if ($ConsistentOffset -and $DSTObservedTrue) 
  {
      Write-Host  -ForegroundColor Red "Inconsistent time zone and UTC conversions"
  } else {
