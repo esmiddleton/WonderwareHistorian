@@ -1,6 +1,9 @@
 ﻿#
 #   Report Time Zone Details
 #
+# Useful to diagnose configuration problems with Windows time zone settings
+# and to illustrate how those problems manifest themselves, independent of AVEVA software
+#
 # Modified: 18-Feb-2022
 # By:       E Middleton
 
