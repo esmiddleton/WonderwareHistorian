@@ -1,14 +1,10 @@
-#	This PowerShell script changes the name of a Historian server stored in "aaTrend" files.
+#	This PowerShell script creates an unecrypted version of the current user's "servers.xml" file.
 #
 #	It must be run from the 32-bit PowerShell command line:
 #
 #	Usage:
 #
-#		powershell -sta RenameTrendServer.ps1 [-path <pathToSearchForCRVFiles>] -o <OldServerName> -n <NewServerName> [-d]
-#
-#	The optional "path" parameter will accept a specific aaTrend file name, or will search a path recursively for all aaTrend files.
-#
-# 	The optional "d" parameter will decrypt an older format "aaTrend" file into the plain text XML used by Historian Client 10.1 and later
+#		powershell -sta DecryptServerList.ps1
 #
 #	This script is UNSUPPORTED and is released "as is" without warranty of any kind.
 #
