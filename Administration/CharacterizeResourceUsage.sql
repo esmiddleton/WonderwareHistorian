@@ -4,7 +4,7 @@ Characterize Historian Resource Usage
 This query gives a high-level view of the loading of a Historian server over the last 24-hours using System Tags.
 The results can be helpful as a first step in assessing the overall load on a system and to identify
 resource constraints. 
-Revised: 14-Dec-2021
+Revised: 15-Feb-2024
 By: E. Middleton
 */
 use Runtime
@@ -62,10 +62,14 @@ where TagName in ('SysPerfCPUTotal','SysPerfDiskTime')
 --and wwRetrievalMode='delta'
 and wwEdgeDetection='leading'
 and Value >95
+and DateTime >= @start
+and DateTime <= @end
 union
 select Start=DateTime, [End]=dateadd(millisecond,wwResolution,DateTime), TagName, Value, wwResolution from History 
-where TagName in ('SysPerfAvailableBytes')
+where TagName in ('SysPerfAvailableMBytes')
 --and wwRetrievalMode='delta'
 and wwEdgeDetection='leading'
-and Value < 20000000
-order by TagName, DateTime
+and Value < 500
+and DateTime >= @start
+and DateTime <= @end
+order by DateTime, TagName
