@@ -20,7 +20,7 @@ set @start = dateadd(minute,-@minutes,@end)
 select StartDateTime, TagName, Average, Minimum, Maximum, StdDev, Range=Maximum-Minimum,PercentGood=round(PercentGood,0)
 from AnalogSummaryHistory
 where TagName in (
-'SysPerfAvailableBytes',
+'SysPerfAvailableMBytes',
 'SysPerfCPUTotal',
 'SysPerfCPUMax',
 'SysPerfDiskTime',
