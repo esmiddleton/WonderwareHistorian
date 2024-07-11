@@ -41,6 +41,8 @@ where TagName in (
 'SysPerfRetrievalPageFaults',
 'SysPerfSQLServerPageFaults',
 'SysStatusTopicsRxData',
+'SysReplicationSyncQueueItemsTotal',
+'SysReplicationSyncQueueValuesPerSecTotal',
 'SysStatusRxTotalItems')
 and wwRetrievalMode='cyclic'
 and wwResolution=@minutes*60000 -- Convert minutes to milliseconds
