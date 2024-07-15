@@ -32,6 +32,8 @@ Wonderware Historian software.
 Modified: 	18-Jun-2013
 By:			E. Middleton
 
+NOTE: Starting in Historian 2023 R2, this is superceded by a proper "feature" for multilingual tag properties
+
 */
 
 USE Runtime
